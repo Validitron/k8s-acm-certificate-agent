@@ -1,0 +1,17 @@
+apiVersion: v2
+name: acm-certificate-agent
+description: K8s operator that automatically names EC2 node instances for easier identification as K8s worker nodes.
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the app version.
+# Versions are expected to follow Semantic Versioning (https://semver.org/)
+version: 0.1.0
+
+# The app version is used to tag images. It does not need to follow semantic versioning rules.
+# Tron uses date versioning by convention.
+appVersion:   "20220618"
+
+maintainers: 
+  - name: Kit Huckvale
+    email: kit.huckvale@unimelb.edu.au

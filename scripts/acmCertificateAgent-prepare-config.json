@@ -1,0 +1,118 @@
+{
+    "name": "Prepare AWS for acm-certificate-agent",
+    "type": "container",
+    "author": "Kit Huckvale",
+    "version": "0.1.0",
+    "requiredParameters": [
+        {
+            "key": "cluster.arn",
+            "description": "AWS ARN of the EKS cluster in which the service account will (eventually) be created. This is required because the cluster-linked OIDC provider details are required during role creation.",
+            "required": true
+        },
+        {
+            "key": "nodeInstanceDecorator.k8s.namespace",
+            "description": "Optional parameter. The namespace into which acm-certificate-agent will be deployed. Defaults to 'tron'."
+        }
+    ],
+    "remarks": [
+        "Creates required IAM role and policy for the acm-certificate-agent to run (see https://docs.aws.amazon.com/eks/latest/userguide/specify-service-account-role.html)",
+        "Additionally creates a private ECR repository to deploy acm-certificate-agent into.",
+        "This is a necessary step before installing the decorator in an AWS EKS cluster.",
+        "Will skip (without error) installation if the policy, role or repository already exist."
+    ],
+    "parameters": [
+        {
+            "key": "_localId",
+            "value": "{generate.shortId:5}"
+        },
+        {
+            "key": "correlationTag",
+            "value": "tron/correlationId"
+        },
+        {
+            "key": "correlationId",
+            "value": "{generate.uuid}"
+        },
+        {
+            "key": "aws.region",
+            "value": "{cluster.arn:regex((?<=:)[^:]+-[0-9]+)}"
+        },
+        {
+            "key": "cluster.name",
+            "value": "{cluster.arn:regex((?<=\\/)[^$]+)}"
+        }
+    ],
+    "subtasks": [
+        {
+            "name": "Import configuration",
+            "type": "importConfig",
+            "arrayDelimiter": " ",
+            "filePath": "nodeInstanceDecorator-prepare-config.params",
+            "parameterScope": "parent"
+        },
+        {
+            "type": "importTask",
+            "filePath": "..\\..\\..\\..\\aws\\scripts\\k8s\\k8s-create-iam-service-account.json",
+            "parameters": [
+                {
+                    "key": "serviceAccount.name",
+                    "value": "{nodeInstanceDecorator.k8s.serviceAccount.name}"
+                },
+                {
+                    "key": "serviceAccount.namespace",
+                    "value": "{nodeInstanceDecorator.k8s.namespace}"
+                },
+                {
+                    "key": "serviceAccount.iam.policy.name",
+                    "value": "{nodeInstanceDecorator.iam.policy.name}"
+                },
+                {
+                    "key": "serviceAccount.iam.policy.trustPolicyPath",
+                    "value": "{nodeInstanceDecorator.iam.policy.trustPolicyPath}"
+                },
+                {
+                    "key": "serviceAccount.iam.serviceRole.nameSuffix",
+                    "value": "{nodeInstanceDecorator.iam.serviceRole.nameSuffix}"
+                },
+                {
+                    "key": "serviceAccount.iam.serviceRole.description",
+                    "value": "Allows the K8s Node Instance Decorator operator to modify EC2 instances."
+                },
+                {
+                    "key": "serviceAccount.skipCreation",
+                    "value": "true"
+                }
+            ],
+            "parameterExtractors": [
+                {
+                    "type": "substitution",
+                    "template": "{serviceAccount.iam.serviceRole.name}",
+                    "targetKey": "nodeInstanceDecorator.iam.serviceRole.name",
+                    "scope": "global"
+                },
+                {
+                    "type": "substitution",
+                    "template": "{serviceAccount.iam.serviceRole.arn}",
+                    "targetKey": "nodeInstanceDecorator.iam.serviceRole.arn",
+                    "scope": "global"
+                }
+            ]
+        },
+        {
+            "name": "Write configuration to console",
+            "type": "output",
+            "label": "AWS configuration",
+            "outputParameters": [
+                {
+                    "key": "cluster.arn",
+                    "value": "{cluster.arn}"
+                },
+                {
+                    "key": "nodeInstanceDecorator.iam.serviceRole.arn",
+                    "value": "{nodeInstanceDecorator.iam.serviceRole.arn}"
+                }
+            ],
+            "skipValidation": true
+        }
+    ]
+}

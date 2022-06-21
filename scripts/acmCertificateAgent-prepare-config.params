@@ -1,0 +1,19 @@
+{
+   "nodeInstanceDecorator": {
+      "iam": {
+         "policy": {
+            "name": "k8sNodeInstanceDecoratorPolicy",
+            "trustPolicyPath": "{_script.directoryPath}\\_resources\\nodeInstanceDecorator-iam-role-trust-policy.json"
+         },
+         "serviceRole": {
+            "nameSuffix": "k8sNodeInstanceDecoratorRole"
+         }
+      },
+      "k8s": {
+         "namespace": "tron",
+         "serviceAccount": {
+            "name": "acm-certificate-agent"
+         }
+      }
+   }
+}

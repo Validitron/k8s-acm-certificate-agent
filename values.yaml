@@ -1,0 +1,28 @@
+nameOverride: ""
+fullNameOverride: ""
+
+context:
+  # Optional value. The domain and username of the user installing the chart. Used to configure the label 'app.kubernetes.io/created-by'. Expected format: "{Domain}_{Username}" complying with label value formatting rules (See https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/). If not set, the label will be omitted.
+  domainUsername: ""
+  # Optional value. A unique identifier that can be used to track all K8s resources created by this chart. Expected format: unique string complying with label value character rules. Default: base64 encoded release name.
+  correlationId: ""
+
+replicaCount: 1
+
+image:
+  # Required value. Repository from which image will be pulled.
+  repository: ""
+  # Optional value. Default: chart appVersion.
+  tag: ""
+  pullPolicy: Always
+  
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+serviceAccount:
+  # Required value. ARN for IAM role granting required EC2 node permissions. For AWS EKS, ARN can be generated using the script-runner script 'nodeInstanceDecorator-prepare-config'.
+  iamRoleArn: ""
+  annotations: {}

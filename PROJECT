@@ -1,0 +1,15 @@
+domain: validitron.io
+layout:
+- go.kubebuilder.io/v3
+projectName: acm-certificate-agent
+repo: github.com/Validitron/k8s-acm-certificate-agent
+resources:
+- controller: true
+  domain: validitron.io
+  kind: Node
+  version: v1
+- controller: true
+  group: core
+  kind: Node
+  path: k8s.io/api/core/v1
+  version: v1

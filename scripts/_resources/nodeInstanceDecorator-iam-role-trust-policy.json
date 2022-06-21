@@ -1,0 +1,19 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "ec2:CreateTags"
+            ],
+            "Resource": "arn:aws:ec2:*:446483188693:instance/*",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "ec2:DescribeInstances"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        }
+    ]
+}

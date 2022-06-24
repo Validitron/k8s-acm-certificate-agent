@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "acm-certificate-agent.fullname" . }}
+data:
+    ENABLE_CERTIFICATE_SYNC: "{{ .Values.config.enableCertificateSync }}"
+    ENABLE_INGRESS_DECORATION: "{{ .Values.config.enableIngressDecoration }}"

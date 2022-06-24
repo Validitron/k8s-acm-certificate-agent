@@ -6,7 +6,7 @@ Copyright Kit Huckvale 2022.
 
 */
 
-//lint:file-ignore ST1005 Override golang error message formatting conventions.
+//lint:file-ignore ST1005 Override golang logging/error formatting conventions (use Validitron standard which is 'Sentence case with punctuation.')
 
 package controllers
 
@@ -39,7 +39,7 @@ import (
 	"Validitron/k8s-acm-certificate-agent/global"
 )
 
-// SecretReconciler reconciles built-in Secret objects.
+// SecretReconciler uploads and synchronizes SSL certificates contained in K8S Secrets with ACM.
 type SecretReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
@@ -57,8 +57,15 @@ type CertificateDetails struct {
 }
 
 type CertificateWrapper struct {
-	PEM  *string
+	PEM  string
 	x509 *x509.Certificate
+}
+
+type SecretAnnotations struct {
+	CertificateArn string
+	SerialNumber   string
+	ExpiryDate     string
+	DomainNames    string
 }
 
 func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -76,6 +83,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return ok
 
 		})).
+		WithLogConstructor(buildLogConstructor(mgr, "secret-reconciler", "(core)", "secret")). // When multiple controllers running with a single manager, the log auto-constructor does not work. Therefore we must do manually.
 		Complete(r)
 }
 
@@ -84,12 +92,14 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	log := log.FromContext(ctx)
 
 	secret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, req.NamespacedName, secret); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
 		if !k8serr.IsNotFound(err) {
 			log.Error(err, "Unable to retrieve Secret.")
 		}
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		return ctrl.Result{RequeueAfter: defaultRequeueLatency}, client.IgnoreNotFound(err)
 	}
+
+	log.Info(fmt.Sprintf("Processing Secret %s...", req.NamespacedName))
 
 	if secret.Type != corev1.SecretTypeTLS {
 		log.Info("Secret is not a TLS certificate: aborting.")
@@ -98,16 +108,16 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Object is marked for deletion - nothing to do (the operator never removes synced ACM certificates.)
 	if !secret.ObjectMeta.DeletionTimestamp.IsZero() {
-		log.Info("Secret marked for deletion: aborting.")
+		log.Info("Secret is marked for deletion: nothing to do.")
 		return ctrl.Result{}, nil
 	}
 
-	// Detect if secret is annotated to enable certificate management.
-	isManaged, ok := secret.Annotations[global.AGENT_ENABLED_ANNOTATION]
-	if ok {
-		ok, _ = strconv.ParseBool(isManaged)
+	// Detect if secret is annotated to enable ACM certificate management.
+	annotationValue, agentEnabled := secret.Annotations[global.AGENT_ENABLED_ANNOTATION]
+	if agentEnabled {
+		agentEnabled, _ = strconv.ParseBool(annotationValue)
 	}
-	if !ok {
+	if !agentEnabled {
 		log.Info("Secret is not annotated to use certificate agent: aborting.")
 		return ctrl.Result{}, nil
 	}
@@ -140,12 +150,17 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	acmClient := acm.NewFromConfig(cfg)
 
-	acmImportRequired := false
-	arnUpdateRequired := false
+	// Evaluate state...
+
+	shouldImportToACM := false
+	shouldSearchExistingCertificates := false
 
 	// If a certificate ARN annotation exists, see if the certificate exists and matches the serial number. If so, abort (imports to ACM are quota limited.)
 	serialNumber := certificateDetails.Certificate.x509.SerialNumber
 	if certificateDetails.CertificateArn != nil {
+
+		log.Info("Certificate has existing ARN annotation. Verifying...")
+
 		input := acm.DescribeCertificateInput{CertificateArn: certificateDetails.CertificateArn}
 		acmCertificate, err := acmClient.DescribeCertificate(context.TODO(), &input)
 		if err == nil {
@@ -153,63 +168,70 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			acmCertSerialNumber, ok := new(big.Int).SetString(strings.ReplaceAll(*acmCertificate.Certificate.Serial, ":", ""), 16)
 			// A certificate with the annotated ARN exists, and it matches on serial number, therefore nothing to do.
 			if ok && serialNumber.Cmp(acmCertSerialNumber) == 0 {
-				log.Error(err, "Certificate already exists in ACM: aborting.")
-				return ctrl.Result{}, nil
+				log.Info("Certificate already exists in ACM.")
+				// An identical certificate with the annotated ARN exists - no import required.
+				shouldImportToACM = false
+			} else {
+				// A certificate with the annotated ARN exists, but it does not match on serial number. (K8s certificate should always override ACM certificate therefore we import it to ACM without further BL required.)
+				shouldImportToACM = true
 			}
-
-			// A certificate with the annotated ARN exists, but it does not match on serial number. (K8s certificate should always override ACM certificate therefore we import it to ACM without further BL required.)
-			acmImportRequired = true
-			arnUpdateRequired = false
 
 			certificateDetails.CreatedAt = r.GetACMCertificateTag(acmClient, acmCertificate.Certificate.CertificateArn, "tron/createdAt")
-
 		} else {
 			if strings.Contains(err.Error(), "(ResourceNotFoundException)") {
-				// Certificate does not exist in ACM, therefore reset ARN annotation. Don't set importRequired yet - we should search ACM certificate more broadly by domain name first (see below).
+
+				// Certificate does not exist in ACM, therefore reset ARN annotation.
 				certificateDetails.CertificateArn = nil
-				acmImportRequired = false
-				arnUpdateRequired = true
+
+				// We should nevertheless check to see if another ACM certificate matches...
+				shouldSearchExistingCertificates = true
 
 			} else {
-				log.Error(err, "Failed to retrieve ACM certificate.")
-				return ctrl.Result{}, err
+				log.Error(err, "ACM certificate lookup failed.")
+				return ctrl.Result{RequeueAfter: defaultRequeueLatency}, err
 			}
 		}
+	} else {
+		shouldSearchExistingCertificates = true
 	}
 
-	if !acmImportRequired {
+	if shouldSearchExistingCertificates {
 
-		// See if any existing ACM certificates match the current certificate. (ACM does not guard against duplicate certificate import, so we must do it manually.)
+		// See if any existing ACM certificates are the current certificate. (ACM does not guard against duplicate certificate import, so we must do it manually.)
 		domainName := certificateDetails.Certificate.x509.Subject.CommonName // ACM extracts domain from subject.CN
 		domainMatches, err := r.FindACMCertificatesByDomain(acmClient, domainName)
 		if err != nil {
-			log.Error(err, "Failed to enumerate existing ACM certificate.")
+			log.Error(err, "Failed to enumerate existing ACM certificates.")
 			return ctrl.Result{}, err
 		}
 
 		// Assume we will need to import the certificate, unless we now find a match.
-		acmImportRequired = true
-		arnUpdateRequired = true
+		shouldImportToACM = true
 
 		for _, acmCertificate := range domainMatches {
 			acmCertSerialNumber, ok := new(big.Int).SetString(strings.ReplaceAll(*acmCertificate.Certificate.Serial, ":", ""), 16)
 			if ok && serialNumber.Cmp(acmCertSerialNumber) == 0 {
 				certificateDetails.CertificateArn = acmCertificate.Certificate.CertificateArn
-				acmImportRequired = false
-				arnUpdateRequired = true
+				shouldImportToACM = false
+				break
 			}
 		}
 
+		// Note that to prevent race/collisions, what we *don't* do here is a search just by domain in case there is more than one Certificate/Secret for a given domain.
+		// This means that existing ACM certificates that match on domain will never be overwritten unless the cluster-arn annotation is set manually.
 	}
 
+	// Do stuff...
+
 	// Import certificate to ACM, if required
-	if acmImportRequired {
+	if shouldImportToACM {
+
+		log.Info(fmt.Sprintf("Importing certificate into ACM (Chain: %s)...", r.DescribeCertificateChain(&certificateDetails)))
 
 		importInput := acm.ImportCertificateInput{
-			Certificate:      []byte(*certificateDetails.Certificate.PEM),
+			Certificate:      []byte(certificateDetails.Certificate.PEM),
 			CertificateChain: []byte(*r.CertificateWrapperArrayToPEM(certificateDetails.Intermediates)),
 			PrivateKey:       certificateDetails.PrivateKey,
-			Tags:             r.CreateStandardTagArray(certificateDetails.CreatedAt),
 		}
 		if certificateDetails.CertificateArn != nil {
 			importInput.CertificateArn = certificateDetails.CertificateArn
@@ -218,27 +240,56 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		importResult, err := acmClient.ImportCertificate(context.TODO(), &importInput)
 		if err != nil {
 			log.Error(err, "ACM certificate import failed.")
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: defaultRequeueLatency}, err
 		}
 
 		certificateDetails.CertificateArn = importResult.CertificateArn
+
+		// Tag separately because you can only tag on import when creating (not updating) a certificate.
+		tagInput := acm.AddTagsToCertificateInput{
+			CertificateArn: certificateDetails.CertificateArn,
+			Tags:           r.CreateStandardTagArray(certificateDetails.CreatedAt),
+		}
+		_, tagError := acmClient.AddTagsToCertificate(context.TODO(), &tagInput)
+		if tagError != nil {
+			log.Error(tagError, "ACM certificate tagging failed.")
+			return ctrl.Result{RequeueAfter: defaultRequeueLatency}, tagError
+		}
+
 	}
 
-	// Patch ROLE_ARN annotation, if required
-	if arnUpdateRequired {
+	shouldUpdateAnnotations := false
+
+	// See if any annotations don't match the values we hold, otherwise no point in updating.
+	annotationSet := SecretAnnotations{
+		CertificateArn: *certificateDetails.CertificateArn,
+		SerialNumber:   r.FormatX509SerialNumber(certificateDetails.Certificate.x509.SerialNumber),
+		ExpiryDate:     certificateDetails.Certificate.x509.NotAfter.Format(global.ISO_8601_FORMAT),
+		DomainNames:    strings.Join(r.ExtractCertificateDomains(certificateDetails.Certificate.x509), ", "),
+	}
+
+	shouldUpdateAnnotations = !r.AnnotationMatches(secret, global.AGENT_CERTIFICATE_ARN_ANNOTATION, annotationSet.CertificateArn) ||
+		!r.AnnotationMatches(secret, global.AGENT_CERTIFICATE_SERIAL_NUMBER_ANNOTATION, annotationSet.SerialNumber) ||
+		!r.AnnotationMatches(secret, global.AGENT_CERTIFICATE_EXPIRY_DATE_ANNOTATION, annotationSet.ExpiryDate) ||
+		!r.AnnotationMatches(secret, global.AGENT_CERTIFICATE_DOMAIN_NAMES_ANNOTATION, annotationSet.DomainNames)
+
+	// Patch annotations if any changes have been detected.
+	if shouldUpdateAnnotations {
+
+		log.Info("Updating Secret annotations...")
+
 		if certificateDetails.CertificateArn == nil {
 			err := errors.New("Certificate ARN update required but no ARN set.")
 			log.Error(err, "Failed to persist ACM certificate ARN back to Secret.")
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: defaultRequeueLatency}, err
 		}
 
-		secret.Annotations[global.AGENT_CERTIFICATE_ARN_ANNOTATION] = *certificateDetails.CertificateArn
-		secret.Annotations[global.AGENT_CERTIFICATE_SERIAL_NUMBER_ANNOTATION] = r.FormatX509SerialNumber(certificateDetails.Certificate.x509.SerialNumber)
-		secret.Annotations[global.AGENT_CERTIFICATE_EXPIRES_ANNOTATION] = certificateDetails.Certificate.x509.NotAfter.Format(global.ISO_8601_FORMAT)
+		secret.Annotations[global.AGENT_CERTIFICATE_ARN_ANNOTATION] = annotationSet.CertificateArn
+		secret.Annotations[global.AGENT_CERTIFICATE_SERIAL_NUMBER_ANNOTATION] = annotationSet.SerialNumber
+		secret.Annotations[global.AGENT_CERTIFICATE_EXPIRY_DATE_ANNOTATION] = annotationSet.ExpiryDate
+		secret.Annotations[global.AGENT_CERTIFICATE_DOMAIN_NAMES_ANNOTATION] = annotationSet.DomainNames
 
-		// TODO - add other annotations e.g. expiry date/serial number.
-
-		err = r.Client.Update(
+		err = r.Update(
 			context.TODO(),
 			secret,
 			&client.UpdateOptions{},
@@ -246,8 +297,12 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 		if err != nil {
 			log.Error(err, "Failed to persist ACM certificate ARN back to Secret.")
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: defaultRequeueLatency}, err
 		}
+	}
+
+	if !shouldImportToACM && !shouldUpdateAnnotations {
+		log.Info("Secret evaluation complete: nothing to do.")
 	}
 
 	return ctrl.Result{}, nil
@@ -304,7 +359,7 @@ func (r *SecretReconciler) ParseCertificateDetails(secret *corev1.Secret) (Certi
 			return CertificateDetails{}, fmt.Errorf("Could not parse certificate at index %d within 'tls.crt'.", i)
 		}
 		certificates = append(certificates, &CertificateWrapper{
-			PEM:  &componentCertificate,
+			PEM:  componentCertificate,
 			x509: certificate,
 		})
 	}
@@ -346,17 +401,20 @@ func (r *SecretReconciler) ParseCertificateDetails(secret *corev1.Secret) (Certi
 		return CertificateDetails{}, errors.New("One or more certificates not incorporated into intermediate chain.")
 	}
 
+	output := &CertificateDetails{
+		SecretName:    &secret.Name,
+		Namespace:     &secret.Namespace,
+		Certificate:   leaf,
+		Intermediates: intermediates,
+		CA:            nil, /*ca*/
+		PrivateKey:    pkBytes,
+	}
+
 	// Retrieve certificate ARN, if set.
 	certificateArn := secret.Annotations[global.AGENT_CERTIFICATE_ARN_ANNOTATION]
 
-	output := &CertificateDetails{
-		SecretName:     &secret.Name,
-		Namespace:      &secret.Namespace,
-		Certificate:    leaf,
-		Intermediates:  intermediates,
-		CA:             nil, /*ca*/
-		PrivateKey:     pkBytes,
-		CertificateArn: &certificateArn,
+	if certificateArn != "" {
+		output.CertificateArn = &certificateArn
 	}
 
 	return *output, nil
@@ -408,13 +466,33 @@ func (r *SecretReconciler) FindACMCertificatesByDomain(acmClient *acm.Client, do
 			}
 		}
 
-		nextToken = *listOutput.NextToken
+		if listOutput.NextToken != nil {
+			nextToken = *listOutput.NextToken
+		} else {
+			nextToken = ""
+		}
+
 		if nextToken == "" {
 			break
 		}
 	}
 
 	return output, nil
+}
+
+func (r *SecretReconciler) DescribeCertificateChain(certificateDetails *CertificateDetails) string {
+
+	output := certificateDetails.Certificate.x509.Subject.CommonName
+
+	if len(certificateDetails.Intermediates) == 0 {
+		return output
+	}
+
+	for _, certificateWrapper := range certificateDetails.Intermediates {
+		output += " < " + certificateWrapper.x509.Subject.CommonName
+	}
+
+	return output
 }
 
 func (r *SecretReconciler) CertificateWrapperArrayToPEM(wrapperArray []*CertificateWrapper) *string {
@@ -424,8 +502,11 @@ func (r *SecretReconciler) CertificateWrapperArrayToPEM(wrapperArray []*Certific
 		return nil
 	}
 
-	for _, certificateWrapper := range wrapperArray {
-		output += *certificateWrapper.PEM
+	for i, certificateWrapper := range wrapperArray {
+		if i > 0 {
+			output += "\n"
+		}
+		output += certificateWrapper.PEM
 	}
 
 	return &output
@@ -502,4 +583,14 @@ func (r *SecretReconciler) FormatX509SerialNumber(number *big.Int) string {
 	}
 
 	return output
+}
+
+func (r *SecretReconciler) ExtractCertificateDomains(certificate *x509.Certificate) []string {
+
+	return certificate.DNSNames
+
+}
+
+func (r *SecretReconciler) AnnotationMatches(secret *corev1.Secret, key string, value string) bool {
+	return secret.Annotations[key] == value
 }

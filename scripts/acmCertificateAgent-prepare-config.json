@@ -10,7 +10,7 @@
             "required": true
         },
         {
-            "key": "nodeInstanceDecorator.k8s.namespace",
+            "key": "acmCertificateAgent.k8s.namespace",
             "description": "Optional parameter. The namespace into which acm-certificate-agent will be deployed. Defaults to 'tron'."
         }
     ],
@@ -47,7 +47,7 @@
             "name": "Import configuration",
             "type": "importConfig",
             "arrayDelimiter": " ",
-            "filePath": "nodeInstanceDecorator-prepare-config.params",
+            "filePath": "acmCertificateAgent-prepare-config.params",
             "parameterScope": "parent"
         },
         {
@@ -56,23 +56,23 @@
             "parameters": [
                 {
                     "key": "serviceAccount.name",
-                    "value": "{nodeInstanceDecorator.k8s.serviceAccount.name}"
+                    "value": "{acmCertificateAgent.k8s.serviceAccount.name}"
                 },
                 {
                     "key": "serviceAccount.namespace",
-                    "value": "{nodeInstanceDecorator.k8s.namespace}"
+                    "value": "{acmCertificateAgent.k8s.namespace}"
                 },
                 {
                     "key": "serviceAccount.iam.policy.name",
-                    "value": "{nodeInstanceDecorator.iam.policy.name}"
+                    "value": "{acmCertificateAgent.iam.policy.name}"
                 },
                 {
-                    "key": "serviceAccount.iam.policy.trustPolicyPath",
-                    "value": "{nodeInstanceDecorator.iam.policy.trustPolicyPath}"
+                    "key": "serviceAccount.iam.policy.trustPolicyTemplatePath",
+                    "value": "{acmCertificateAgent.iam.policy.trustPolicyTemplatePath}"
                 },
                 {
                     "key": "serviceAccount.iam.serviceRole.nameSuffix",
-                    "value": "{nodeInstanceDecorator.iam.serviceRole.nameSuffix}"
+                    "value": "{acmCertificateAgent.iam.serviceRole.nameSuffix}"
                 },
                 {
                     "key": "serviceAccount.iam.serviceRole.description",
@@ -87,13 +87,13 @@
                 {
                     "type": "substitution",
                     "template": "{serviceAccount.iam.serviceRole.name}",
-                    "targetKey": "nodeInstanceDecorator.iam.serviceRole.name",
+                    "targetKey": "acmCertificateAgent.iam.serviceRole.name",
                     "scope": "global"
                 },
                 {
                     "type": "substitution",
                     "template": "{serviceAccount.iam.serviceRole.arn}",
-                    "targetKey": "nodeInstanceDecorator.iam.serviceRole.arn",
+                    "targetKey": "acmCertificateAgent.iam.serviceRole.arn",
                     "scope": "global"
                 }
             ]
@@ -108,8 +108,8 @@
                     "value": "{cluster.arn}"
                 },
                 {
-                    "key": "nodeInstanceDecorator.iam.serviceRole.arn",
-                    "value": "{nodeInstanceDecorator.iam.serviceRole.arn}"
+                    "key": "acmCertificateAgent.iam.serviceRole.arn",
+                    "value": "{acmCertificateAgent.iam.serviceRole.arn}"
                 }
             ],
             "skipValidation": true

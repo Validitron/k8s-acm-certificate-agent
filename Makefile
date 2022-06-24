@@ -9,9 +9,9 @@
 #   - TAG - Optional parameter. Tag identifying the specific image to be used. If not specified, defaults to the value of appVersion in Chart.yaml.
 # For deploy, additionally:
 #   - CLUSTER_ARN - Required parameter. The ARN that identifies the K8s context into which deployment should occur.
-# 	- ROLE_ARN - Required parmameter. The AWS ARN of the IAM role granting access to read Nodes. Can be generated using the script-runner script 'nodeInstanceDecorator-prepare-config'
+# 	- ROLE_ARN - Required parmameter. The AWS ARN of the IAM role granting access to read Nodes. Can be generated using the script-runner script 'acmCertificateAgent-prepare-config'
 #   - NAMESPACE - Optional parameter. The namespace into which the controller should be deployed. Defaults to 'tron'
-#   - NAME_PREFIX - Optional parameter. Prefix to be applied to the standard name of objects created in K8S. Default is unset. Node-instance-decorator is intended to be singleton.
+#   - NAME_PREFIX - Optional parameter. Prefix to be applied to the standard name of objects created in K8S. Default is unset. acmCertificateAgent is intended to run as a singleton at the cluster level.
 
 # := syntax means expression is evaluated immediately.
 TAG:=${shell grep -Po '(?<=appVersion:).+$$' Chart.yaml | sed -n "s/^\([^\"']*[\"']\(.*\)[\"'][^\"']*\|\s*\([^\"'].*[^\s\"']*\)\s*\)$$/\2\3/ p"}

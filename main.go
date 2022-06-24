@@ -6,17 +6,19 @@ Copyright Kit Huckvale 2022.
 
 */
 
-//lint:file-ignore ST1005 Override golang error message formatting conventions.
+//lint:file-ignore ST1005 Override golang logging/error formatting conventions (use Validitron standard which is 'Sentence case with punctuation.')
 
 package main
 
 import (
 	"flag"
 	"os"
+	"strconv"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	cm "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	networking "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -28,16 +30,25 @@ import (
 )
 
 var (
+	// We use a single scheme across all controllers for simplicity.
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+const (
+	ENABLE_CERTIFICATE_SYNC   string = "ENABLE_CERTIFICATE_SYNC"
+	ENABLE_INGRESS_DECORATION string = "ENABLE_INGRESS_DECORATION"
+)
+
 func init() {
 
-	//Add scheme for build in types.
+	//Add scheme for build in types (Secret).
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	//Add scheme for cert-manager API types.
+	// Add scheme for networking types (Ingress).
+	utilruntime.Must(networking.AddToScheme(scheme))
+
+	//Add scheme for cert-manager API types (Certificate).
 	utilruntime.Must(cm.AddToScheme(scheme))
 
 }
@@ -57,9 +68,11 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	// NB that when there are multiple controllers, logging must be further configured so that log entries are correctly annotated with controller details. See the SetupWithManager methods for each controller.
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		//Namespace: // No namespace is defined = cluster-scoped.
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
@@ -72,20 +85,36 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.SecretReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create secret reconciler.", "controller", "Secret")
-		os.Exit(1)
+	if getBooleanEnv(ENABLE_CERTIFICATE_SYNC) {
+
+		if err = (&controllers.SecretReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create Secret reconciler.", "controller", "Secret")
+			os.Exit(1)
+		}
+
+		if err = (&controllers.CertificateReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create Certificate reconciler.", "controller", "Certificate")
+			os.Exit(1)
+		}
+
 	}
 
-	if err = (&controllers.CertificateReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create certificate reconciler.", "controller", "Certificate")
-		os.Exit(1)
+	if getBooleanEnv(ENABLE_INGRESS_DECORATION) {
+
+		if err = (&controllers.IngressReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create ingress reconciler.", "controller", "Ingress")
+			os.Exit(1)
+		}
+
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -102,4 +131,9 @@ func main() {
 		setupLog.Error(err, "Problem running manager.")
 		os.Exit(1)
 	}
+}
+
+func getBooleanEnv(key string) bool {
+	result, _ := strconv.ParseBool(os.Getenv(key))
+	return result
 }

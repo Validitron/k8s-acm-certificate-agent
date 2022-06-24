@@ -1,0 +1,20 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "acm:DescribeCertificate",
+                "acm:AddTagsToCertificate",
+                "acm:ImportCertificate",
+                "acm:ListTagsForCertificate"
+            ],
+            "Resource": "arn:aws:acm:*:{aws.accountId}:certificate/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": "acm:ListCertificates",
+            "Resource": "*"
+        }
+    ]
+}

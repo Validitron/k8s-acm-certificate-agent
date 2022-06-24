@@ -1,6 +1,12 @@
 nameOverride: ""
 fullNameOverride: ""
 
+config:
+  # Controls whether the agent will process Secret and Certificate resources in order to import/sync SSL certificates with ACM.
+  enableCertificateSync: true
+  # Controls whether the agent will process ALB-enabled Ingress resources that use HTTPS in order to add a certificate-arn annotation (i.e. use a relevant ACM certificate.)
+  enableIngressDecoration: true
+
 context:
   # Optional value. The domain and username of the user installing the chart. Used to configure the label 'app.kubernetes.io/created-by'. Expected format: "{Domain}_{Username}" complying with label value formatting rules (See https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/). If not set, the label will be omitted.
   domainUsername: ""
@@ -23,6 +29,6 @@ tolerations: []
 affinity: {}
 
 serviceAccount:
-  # Required value. ARN for IAM role granting required EC2 node permissions. For AWS EKS, ARN can be generated using the script-runner script 'nodeInstanceDecorator-prepare-config'.
+  # Required value. ARN for IAM role granting required ACM permissions. For AWS EKS, ARN can be generated using the script-runner script 'acmCertificateAgent-prepare-config'.
   iamRoleArn: ""
   annotations: {}

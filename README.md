@@ -8,16 +8,16 @@ The operator performs the following functions:
 - Automatically imports (and maintains) SSL certificates stored as K8s Secrets (core/Secret) into ACM.
 - Automatically adds annotations to ALB-enabled K8s Ingresses (networking.k8s.io/Ingress) that use HTTPS to consume ACM certificates.
 
-For more information about to configure resources to use the agent, see **Using in K8s**, below.
+For more information about to configure resources to use the agent, see **Using in Kubernetes**, below.
 
 <br/>
 
 
 ## Operator scope
 
-acm-certificate-agent does *not* scope its activities to the namespace in which it is installed. You should not therefore install multiple copies in different namespaces on a single cluster.
+acm-certificate-agent does *not* scope its activities to the namespace in which it is installed. You do not need to (and should not) install copies into different namespaces within a single cluster.
 
-A single installation will manage ACM certificate import and Ingress linking across an entire cluster. 
+A single installation will manage ACM certificate import and Ingress linking across an entire cluster.
 
 <br/>
 
@@ -40,7 +40,7 @@ You will need:
     **NOTE:** The .kubeconfig associated with the WSL kubectl is *NOT* the same as the one used in Windows. 
 Verify cluster access within WSL using `kubectl config get-contexts` and, if  necessary, add the required context using e.g. `aws --region {aws.region} eks update-kubeconfig --name {cluster.name}`. 
 
-### Procedure
+### Installation procedure
 
 1. Create an IAM role and associated policy that grants permission for the relevant ACM operations. Note the ARN of the role that is created.
    
@@ -68,6 +68,8 @@ Verify cluster access within WSL using `kubectl config get-contexts` and, if  ne
         make deploy REPO_URI={REPOSITORY_URI} CLUSTER_ARN={CLUSTER_ARN} ROLE_ARN={ROLE_ARN}
     ```
     
+    **NOTE:** Run `make --help` for more information on all potential `make` targets.
+
     **NOTE:** On Windows, run this command within WSL.
 
     Existing worker nodes should be processed and their corresponding EC2 instance names updated automatically. You can view these names using e.g. the AWS EC2 web console or CLI.
@@ -76,7 +78,7 @@ Verify cluster access within WSL using `kubectl config get-contexts` and, if  ne
 
 ## Using in Kubernetes
 
-### Automating ACM certificate import
+### Core function 1: Automating ACM certificate import
 
 To enable ACM certificate import, you can place an annotation on either Certificate or Secret resources.
 
@@ -100,7 +102,7 @@ To enable ACM certificate import, you can place an annotation on either Certific
 
 <br/>
 
-### Automating explicit ALB ingress ACM certificate assignment
+### Core function 2: Automating explicit ALB ingress ACM certificate assignment
 
 **NOTE**: ALB can automatically detect the correct certificate(s) to assign to Load Balancer routes, independently of acm-certificate-agent. This may be preferable to explicitly setting the ARN using acm-certificate-agent. To use auto-configuration, simply set the certificate-arn annotation on the Ingress to an empty string (and ignore the acm agent instructions below.
 
@@ -108,7 +110,7 @@ To enable ACM certificate import, you can place an annotation on either Certific
     alb.ingress.kubernetes.io/certificate-arn: ''
 ```
 
-If you do want to explicitly assign an SSL certificate to an ALB Ingress (networking.k8s.io/Ingress), add the following annotation to its definition:
+If you want to *explicitly* assign an SSL certificate to an ALB Ingress (networking.k8s.io/Ingress), add the following annotation to its definition:
 
 `acm-certificate-agent.validitron.io/enabled: 'true'`
 
@@ -142,15 +144,19 @@ Any existing ACM certificates and resource annotations will not be removed durin
 
 <br/>
 
+## Remarks
+
+- acm-certificate-agent will never delete ACM certificates, even if they have expired. If import is enabled and a new certificate-agent certificate is found, then this will be imported alongside any existing certificates. If you are using automatic binding with ALB (see **Core function 2**, above) then the certificate that is selected for load balancing may not match the current certificate version within K8s. 
+
+<br/>
+
 ## How it works
 This project uses the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
 
-It was built from a kubebuilder project and subsequently modified to use Helm.
+It was built from a kubebuilder project and modified to use Helm.
 
 It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) 
 which provides a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 

@@ -221,9 +221,8 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		// This means that existing ACM certificates that match on domain will never be overwritten unless the cluster-arn annotation is set manually.
 	}
 
-	// Do stuff...
-
-	// Import certificate to ACM, if required
+	// Import certificate to ACM, if required.
+	// Note that in case of downstream dependencies within AWS, we do not delete old ACM certificates (even if they have expired.)
 	if shouldImportToACM {
 
 		log.Info(fmt.Sprintf("Importing certificate into ACM (Chain: %s)...", r.DescribeCertificateChain(&certificateDetails)))

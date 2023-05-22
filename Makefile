@@ -10,7 +10,7 @@
 # For deploy, additionally:
 #   - CLUSTER_ARN - Required parameter. The ARN that identifies the K8s context into which deployment should occur.
 # 	- ROLE_ARN - Required parmameter. The AWS ARN of the IAM role granting access to read Nodes. Can be generated using the script-runner script 'acmCertificateAgent-prepare-config'
-#   - NAMESPACE - Optional parameter. The namespace into which the controller should be deployed. Defaults to 'tron'
+#   - NAMESPACE - Required parameter. The namespace into which the controller should be deployed. Defaults to 'tron'
 #   - NAME_PREFIX - Optional parameter. Prefix to be applied to the standard name of objects created in K8S. Default is unset. acmCertificateAgent is intended to run as a singleton at the cluster level.
 
 # := syntax means expression is evaluated immediately.
@@ -20,7 +20,6 @@ AWS_REGION:=${shell echo ${REPO_URI} | grep -Po '(?<=ecr\.)(?:[^-]+-)+[0-9]+'}
 AWS_ACCOUNTID:=${shell echo ${REPO_URI} | grep -Po '(?<=^)[0-9]+'}
 AWS_REGISTRY:=${shell echo ${REPO_URI} | grep -Po '^[^\/]+'}
 
-NAMESPACE=tron
 ifneq ($(NAME_PREFIX),)
 NAME=${NAME_PREFIX}-acm-certificate-agent
 else

@@ -120,6 +120,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if !agentEnabled {
 		log.Info("Secret is not annotated to use certificate agent: aborting.")
 		return ctrl.Result{}, nil
+		// NB that if a user manually clears the secret acm-certificate-agent annotations, but the cert-manager certificate still has an 'acm-certificate-agent/enabled' annotation, then eventually the secret will be reconfigured (via certificate_controller) as agent-managed (and decorated with the appropriate annotations.) This happens because operators periodically run even if there are no changes to the target manifests.
 	}
 
 	// Parse out leaf certificate, intermediates chain and private key from the K8s Secret.

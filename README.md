@@ -65,7 +65,7 @@ Verify cluster access within WSL using `kubectl config get-contexts` and, if  ne
 3. Deploy the operator to the cluster.
 
     ```sh
-        make deploy REPO_URI={REPOSITORY_URI} CLUSTER_ARN={CLUSTER_ARN} ROLE_ARN={ROLE_ARN}
+        make deploy REPO_URI={REPOSITORY_URI} CLUSTER_ARN={CLUSTER_ARN} ROLE_ARN={ROLE_ARN} NAMESPACE={NAMESPACE}
     ```
     
     **NOTE:** Run `make --help` for more information on all potential `make` targets.
@@ -147,7 +147,8 @@ Any existing ACM certificates and resource annotations will not be removed durin
 ## Remarks
 
 - acm-certificate-agent will never delete ACM certificates, even if they have expired. If import is enabled and a new certificate-agent certificate is found, then this will be imported alongside any existing certificates. If you are using automatic binding with ALB (see **Core function 2**, above) then the certificate that is selected for load balancing may not match the current certificate version within K8s. 
-
+- If a user manually removes acm-certificate-agent annotations from a Secret but cert-manager certificate still has an 'acm-certificate-agent/enabled' = true annotation, then eventually the Secret will be reconfigured (via certificate_controller) as agent-managed (and decorated with the appropriate annotations.) This is by design and happens because operators periodically run even if there are no changes to the target manifests.
+y
 <br/>
 
 ## How it works

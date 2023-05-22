@@ -109,7 +109,7 @@ To enable ACM certificate import, you can place an annotation on either Certific
 
 ### Core function 2: Automating explicit ALB ingress ACM certificate assignment
 
-**NOTE**: ALB can automatically detect the correct certificate(s) to assign to Load Balancer routes, independently of acm-certificate-agent. This may be preferable to explicitly setting the ARN using acm-certificate-agent. To use auto-configuration, simply set the certificate-arn annotation on the Ingress to an empty string (and ignore the acm agent instructions below.
+**NOTE**: ALB can automatically detect the correct certificate(s) to assign to Load Balancer routes, independently of acm-certificate-agent. This may be preferable to explicitly setting the ARN using acm-certificate-agent. To use auto-configuration, simply set the certificate-arn annotation on the Ingress to an empty string (and ignore the acm agent instructions below.)
 
 ```
     alb.ingress.kubernetes.io/certificate-arn: ''

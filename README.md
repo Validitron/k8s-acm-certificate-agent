@@ -33,7 +33,7 @@ Both must be installed to use the operator within a cluster.
 ### Prerequisites
 You will need:
 - An AWS EKS cluster with at least one node group, and the ARN associated with this cluster.
-- An AWS ECR repository into which to deploy the acm-certificate-agent operator image, and the URI associated with this repository. The URI can be obtained from the AWS web console or CLI.
+- An AWS ECR repository into which to deploy the acm-certificate-agent operator image, and the URI associated with this repository. The URI can be obtained from the AWS web console or CLI. Note that the AWS ECR repository *does not* need to be in the same region as the cluster.
 - Local installations of golang, kubectl, aws-cli and helm. On Windows, these should be installed within WSL.
 - Local installation of script-runner, if intending to use scripted IAM role/policy creation.
 - A Kubernetes namespace into which to install the operator. This namespace must exist and be specified using the {NAMESPACE} parameter below.

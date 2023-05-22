@@ -97,7 +97,7 @@ To enable ACM certificate import, you can place an annotation on either Certific
 
 - **Secrets (core/Secret)**
 
-    **NOTE**:* If the Secret is being managed by cert-manager Certificate, you should not configure the Secret directly but rather annotate the Certificate instead (see above) so that if the Secret is deleted/recreated by cert-manager, the agent configuration persists.
+    **NOTE**: If the Secret is being managed by a cert-manager Certificate resource, you should *not* configure the Secret directly but rather annotate the Certificate instead (see above). This will ensure that if the Secret is deleted/recreated by cert-manager (for example, when the certificate is re-issued), agent configuration persists and ACM sychronisation continues without interruption.
 
     To enable ACM import for a SSL certificate, add the following annotation to its definition:
 

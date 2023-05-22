@@ -125,7 +125,7 @@ An `alb.ingress.kubernetes.io/certificate-arn` annotation corresponding to a com
 
 For more information about ALB annotations/configuration see https://kubernetes-sigs.github.io/aws-load-balancer-controller/v1.1/guide/ingress/annotation
 
-The agent will select the first certificate(s) that is/are capable of providing SSL to the host name(s) specified in the Ingress. If ACM contains multiple certificates that support a given domain, which certificate will be selected cannot be guaranteed. 
+The agent will select the first certificate(s) that is/are capable of providing SSL to the host name(s) specified in the Ingress. If ACM contains multiple certificates that support a given domain (after discounting expired and invalid certificates), which certificate will be selected cannot be guaranteed. 
 
 If the Ingress contains multiple routes that need more than one certificate to serve them, the agent will try to find all the required certificates. If one or more certificates cannot be found, the ARNs of those that have been found will be added to the annotation, and the agent will keep retrying until all the certificates can be matched.
 

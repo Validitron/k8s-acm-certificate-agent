@@ -1,0 +1,204 @@
+{
+   "name": "Patch manifest labels",
+   "type": "container",
+   "author": "Kit Huckvale",
+   "version": "0.1.0",
+   "expectedParameters": [
+      {
+         "key": "manifestPath",
+         "description": "Fully qualified path to the the YAML file that should be patched.",
+         "required": true
+      },
+      {
+         "key": "selectors",
+         "description": "Optional parameter. Specifies one or more selectors (as a comma-separated list) to locate the specific manifest/specification where labels should be added within the document at {manifestPath}. Defaults to '$'."
+      },
+      {
+         "key": "selectorSuffix",
+         "description": "Optional parameter. Path components that should be appended to all selectors. Defaults to '.metadata.labels'"
+      },
+      {
+         "key": "labels.app.name",
+         "description": "Optional label. The name of the application."
+      },
+      {
+         "key": "labels.app.instance",
+         "description": "Optional label. A unique name identifying the instance of an application."
+      },
+      {
+         "key": "labels.app.version",
+         "description": "Optional label. The current version of the application (e.g., a semantic version, revision hash, etc.)"
+      },
+      {
+         "key": "labels.app.component",
+         "description": "Optional label. The component within the architecture."
+      },
+      {
+         "key": "labels.app.partOf",
+         "description": "Optional label. The name of a higher level application this one is part of."
+      },
+      {
+         "key": "labels.app.managedBy",
+         "description": "Optional label. The tool being used to manage the operation of an application. If not supplied will be populated automatically."
+      },
+      {
+         "key": "labels.app.createdBy",
+         "description": "Optional label. The controller/user who created this resource. If not supplied will be set to the current user details."
+      },
+      {
+         "key": "labels.custom",
+         "description": "Optional parameter. Comma-separated list of parameter names. Each parameter name will become the label and its value will be assigned to the label value."
+      }
+   ],
+   "remarks": [
+      "Adds k8s recommended labels to a k8s resource (See https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels).",
+      "Specifying a label parameter will overwrite any existing label. To strip labels, use yaml-patcher.",
+      "Replaces old format k8s-% labels with up-to-date 'app.kubernetes.io/%' formats.",
+      "Also decorates a correlationId label under the key '{correlationTag}'"
+   ],
+   "parameters": [
+      {
+         "key": "correlationTag",
+         "value": "tron/correlationId"
+      },
+      {
+         "key": "correlationId",
+         "value": "{generate.uuid}"
+      },
+      {
+         "key": "selectors",
+         "value": "$"
+      },
+      {
+         "key": "selectorSuffix",
+         "value": ".metadata.labels"
+      },
+      {
+         "key": "labels.app.name",
+         "value": ""
+      },
+      {
+         "key": "labels.app.instance",
+         "value": ""
+      },
+      {
+         "key": "labels.app.version",
+         "value": ""
+      },
+      {
+         "key": "labels.app.component",
+         "value": ""
+      },
+      {
+         "key": "labels.app.partOf",
+         "value": ""
+      },
+      {
+         "key": "labels.app.managedBy",
+         "value": "tron"
+      },
+      {
+         "key": "labels.app.createdBy",
+         "value": "{user.domainUsername}"
+      },
+      {
+         "key": "labels.custom",
+         "value": ""
+      }
+   ],
+   "muteSubtasks": true,           
+   "subtasks": [
+      {
+         "name": "Replace old-style k8s labels",
+         "type": "container",
+         "subtasks": [
+            {
+               "name": "Replace 'k8s-app'",
+               "type": "command",
+               "command": "yaml-patcher --infile \"{manifestPath}\" --overwrite -x \"(?<=\\W)k8s-app(?=:):app.kubernetes.io/name\""
+            }
+         ]
+      },
+      {
+         "name": "Process selectors",
+         "type": "parameterIterator",
+         "parameterTemplate": "{selectors}",
+         "iteratedKey": "_selector",
+         "templateTask": {
+            "name": "Create labels in '{_selector}'",
+            "type": "container",
+            "subtasks": [
+               {
+                  "name": "Create app.kubernetes.io labels",
+                  "type": "parameterIterator",
+                  "parameterTemplate": "labels.app.name, labels.app.instance, labels.app.version, labels.app.component, labels.app.partOf, labels.app.managedBy, labels.app.createdBy",
+                  "iteratedKey": "_qualifiedLabel",
+                  "templateTask": {
+                     "name": "Create 'app.kubernetes.io/{_label:kebabCased}' label if set",
+                     "type": "parameterConditional",
+                     "expression": "{_value:hasValue}",
+                     "conditionedTask": {
+                        "name": "Create label",
+                        "type": "command",
+                        "command": "yaml-patcher --infile \"{manifestPath}\" --overwrite -a \"{_selector}{selectorSuffix}.'app.kubernetes.io/{_label:kebabCased}':{_value:restrictTo(A-Z0-9\\.\\-_)}\""
+                     },
+                     "parameters": [
+                        {
+                           "key": "_label",
+                           "value": "{_qualifiedLabel:regex((?<=app\\.).+)}"
+                        },
+                        {
+                           "key": "_value",
+                           "value": "{{_qualifiedLabel}}"
+                        }
+                     ]
+                  }
+               },
+               {
+                  "name": "Create app label",
+                  "type": "parameterConditional",
+                  "expression": "{labels.app.name:hasValue}",
+                  "conditionedTask": {
+                     "name": "Configure label",
+                     "type": "command",
+                     "command": "yaml-patcher --infile \"{manifestPath}\" --overwrite -a \"{_selector}{selectorSuffix}.app:{labels.app.name:restrictTo(A-Z0-9\\.\\-_)}\""
+                  }
+               },
+               {
+                  "name": "Create custom labels",
+                  "type": "parameterIterator",
+                  "parameterTemplate": "{labels.custom}",
+                  "iteratedKey": "_label",
+                  "templateTask": {
+                     "name": "Create '{_label}' label if set",
+                     "type": "parameterConditional",
+                     "expression": "{_value:hasValue}",
+                     "conditionedTask": {
+                        "name": "Create label",
+                        "type": "command",
+                        "command": "yaml-patcher --infile \"{manifestPath}\" --overwrite -a \"{_selector}{selectorSuffix}.'{_label:kebabCased}':{_value:restrictTo(A-Z0-9\\.\\-_)}\""
+                     },
+                     "parameters": [
+                        {
+                           "key": "_value",
+                           "value": "{{_label}}"
+                        }
+                     ]
+                  }
+               },
+               {
+                  "name": "Create tron labels",
+                  "type": "container",
+                  "subtasks": [
+                     {
+                        "name": "Create '{correlationTag}' label",
+                        "type": "command",
+                        "command": "yaml-patcher --infile \"{manifestPath}\" --overwrite -a \"{_selector}{selectorSuffix}.'{correlationTag}':{correlationId:restrictTo(A-Z0-9\\.\\-_)}\""
+                     }
+                  ]
+               }
+            ]
+         }
+      }
+   ]
+}

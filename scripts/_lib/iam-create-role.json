@@ -1,0 +1,102 @@
+{
+  "name": "Create IAM role '{role.name}'",
+  "type": "container",
+  "author": "Kit Huckvale",
+  "version": "0.1.0",
+  "expectedParameters": [
+   {
+      "key": "aws.region",
+      "description": "Code for AWS region in which the role should be created. See https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/using-regions-availability-zones.html#concepts-regions",
+      "required": true
+   },
+   {
+      "key": "role.name",
+      "description": "Name of the role that will be created.",
+      "required": true
+   },
+   {
+      "key": "role.description",
+      "description": "A plain English description of the purpose of the role.",
+      "required": true
+   },
+   {
+      "key": "role.trustedEntitiesPolicyPath",
+      "description": "Fully qualified path to a JSON policy document that specifies who can assume the role. See https://docs.aws.amazon.com/cli/latest/reference/iam/create-role.html",
+      "required": true
+   },
+   {
+      "key": "role.policyArns",
+      "description": "Comma-separated list of policy ARNS that will be applied to this role.",
+      "required": true
+   }
+  ],
+  "remarks": [
+    "Will fail if the role with the specified name already exists."
+  ],
+  "parameters": [
+   {
+      "key": "correlationTag",
+      "value": "tron/correlationId"
+   },
+   {
+      "key": "correlationId",
+      "value": "{generate.uuid}"
+   }
+  ],
+  "subtasks": [
+     {
+         "name": "Verify that role does not already exist",
+         "type": "command",
+         "command": "aws --region {aws.region} iam get-role --role-name {role.name}",
+         "outputEvaluators": [
+            {
+               "type": "regex",
+               "pattern": "NoSuchEntity",
+               "useErrorOutput": true,
+               "resultingStatus": "OK"
+            }
+         ]
+    },
+    {
+      "name": "Create role",
+      "type": "command",
+      "command": "aws --region {aws.region} iam create-role --role-name {role.name} --assume-role-policy-document \"file://{role.trustedEntitiesPolicyPath}\" --description \"{role.description}\" --tags Key=\"{correlationTag}\",Value=\"{correlationId}\" Key=\"tron/createdBy\",Value=\"{user.domainUsername}\" Key=\"tron/createdAt\",Value=\"{execution.iso8601}\"",
+      "parameterExtractors": [
+        {
+          "type": "substitution",
+          "template": "{role.name}",
+          "targetKey": "role.name",
+          "scope": "global"
+        },
+        {
+          "type": "jsonPath",
+          "path": "Role.Arn",
+          "targetKey": "role.arn",
+          "scope": "global"
+        }
+      ],
+      "rollbackTask": {
+        "name": "Delete role",
+        "type": "command",
+        "command": "aws --region {aws.region} iam delete-role --role-name {role.name}"
+      }
+    },
+    {
+      "name": "Set permissions policies",
+      "type": "parameterIterator",
+      "parameterTemplate": "{role.policyArns}",
+      "iteratedKey": "_policyArn",
+      "templateTask": {
+        "name": "Attach policy '{_policyName}'",
+        "type": "command",
+        "parameters" : [
+          { 
+              "key": "_policyName",
+              "value": "{_policyArn:regex((?<=\\/)[^$]+)}"
+          }
+        ],
+        "command": "aws --region {aws.region} iam attach-role-policy --role-name {role.name} --policy-arn {_policyArn}"
+      }
+    }
+  ]
+}

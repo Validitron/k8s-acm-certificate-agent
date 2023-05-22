@@ -1,0 +1,113 @@
+{
+   "name": "Create IAM policy '{policy.name}'",
+   "type": "container",
+   "author": "Kit Huckvale",
+   "version": "0.1.0",
+   "expectedParameters": [
+      {
+         "key": "aws.region",
+         "description": "Code for AWS region in which the policy should be created. See https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/using-regions-availability-zones.html#concepts-regions",
+         "required": true
+      },
+      {
+         "key": "policy.name",
+         "description": "Name of the policy that will be created.",
+         "required": true
+      },
+      {
+         "key": "policy.trustPolicyTemplatePath",
+         "description": "Fully qualified path to a JSON policy template or document that configures the policy. For more information see: https://aws.amazon.com/blogs/security/how-to-use-trust-policies-with-iam-roles/",
+         "required": true
+      }
+   ],
+   "remarks": [
+      "Will skip but not fail if the policy with the specified name already exists (assumes that policies are intended to be reused.)",
+      "Because 'aws iam list-policies' does not support filtering, the policy arn is constructed using the accountId and policy name. This may be error prone."
+   ],
+   "parameters": [
+      {
+         "key": "_localId",
+         "value": "{generate.shortId:5}"
+      },
+      {
+         "key": "correlationTag",
+         "value": "tron/correlationId"
+      },
+      {
+         "key": "correlationId",
+         "value": "{generate.uuid}"
+      },
+      {
+         "key": "policy.trustPolicyPath",
+         "value": "{execution.outputDirectory}\\iam-{_localId}\\trust-policy.yaml"
+      }
+   ],
+   "subtasks": [
+      {
+         "name": "Create policy if required",
+         "type": "container",
+         "subtasks": [
+            {
+               "name": "Verify that policy does not already exist",
+               "type": "command",
+               "command": "aws --region {aws.region} iam get-policy --policy-arn arn:aws:iam::{aws.accountId}:policy/{policy.name}",
+               "outputEvaluators": [
+                  {
+                     "type": "regex",
+                     "pattern": "NoSuchEntity",
+                     "useErrorOutput": true,
+                     "resultingStatus": "OK"
+                  },
+                  {
+                     "type": "else",
+                     "resultingStatus": "Skip Out"
+                  }
+               ]
+            },
+            {
+               "name": "Populate policy template",
+               "type": "template",
+               "templateFilePath": "{policy.trustPolicyTemplatePath}",
+               "savePath": "{policy.trustPolicyPath}"
+            },
+            {
+               "name": "Create the policy",
+               "type": "command",
+               "command": "aws --region {aws.region} iam create-policy --policy-name {policy.name} --policy-document \"file://{policy.trustPolicyPath}\" --tags Key=\"{correlationTag}\",Value=\"{correlationId}\" Key=\"tron/createdBy\",Value=\"{user.domainUsername}\" Key=\"tron/createdAt\",Value=\"{execution.iso8601}\"",
+               "parameterExtractors": [
+                  {
+                     "type": "substitution",
+                     "template": "{policy.name}",
+                     "targetKey": "policy.name",
+                     "scope": "global"
+                  }
+               ],
+               "rollbackTask": {
+                  "name": "Delete policy",
+                  "type": "command",
+                  "command": "aws --region {aws.region} iam delete-policy --policy-arn {policy.arn}"
+               }
+            }
+         ]
+      },
+      {
+         "name": "Retrieve policy details",
+         "type": "command",
+         "command": "aws sts get-caller-identity",
+         "parameterExtractors": [
+            {
+               "type": "jsonPath",
+               "path": "Account",
+               "targetKey": "aws.accountId",
+               "scope": "global"
+            },
+            {
+               "type": "substitution",
+               "template": "arn:aws:iam::{aws.accountId}:policy/{policy.name}",
+               "targetKey": "policy.arn",
+               "scope": "global"
+            }
+         ]
+      }
+   ]
+}

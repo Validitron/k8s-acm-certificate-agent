@@ -52,7 +52,7 @@
         },
         {
             "type": "importTask",
-            "filePath": "..\\..\\..\\..\\aws\\scripts\\k8s\\k8s-create-iam-service-account.json",
+            "filePath": "_lib\\k8s-create-iam-service-account.json",
             "parameters": [
                 {
                     "key": "serviceAccount.name",
